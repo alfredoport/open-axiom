@@ -36,7 +36,7 @@ import c_-util
 namespace BOOT
 
 module nrunfast where
-  getOpCode: (%Symbol, %Vector %Thing, %Short) -> %Maybe %Short
+  getOpCode: (%Symbol, %Vector %Thing) -> %Maybe %Short
 
 ++
 $monitorNewWorld := false
@@ -72,11 +72,11 @@ getDomainCompleteCategories dom ==
     cats := [newExpandLocalType(vectorRef(vec,i),dom,dom), :cats]
   reverse! cats
  
-getOpCode(op,vec,max) ==
+getOpCode(op,vec) ==
 --search Op vector for "op" returning code if found, nil otherwise
   res := nil
-  for i in 0..max by 2 repeat
-    sameObject?(vectorRef(vec,i),op) => return (res := i + 1)
+  for i in 0..maxIndex vec by 2 repeat
+    symbolEq?(vectorRef(vec,i),op) => return (res := i + 1)
   res
 
 evalSlotDomain(u,dollar) ==
@@ -153,17 +153,19 @@ replaceGoGetSlot env ==
 --=======================================================
 
 lookupComplete(op,sig,dollar,env) == 
+  $lookupDefaults =>
+    newLookupInCategories(op,sig,first env,dollar)  --lookup first in my cats
+      or newLookupInAddChain(op,sig,first env,dollar)
   newLookupInTable(op,sig,dollar,env,false)
  
 lookupIncomplete(op,sig,dollar,env) == 
+  $lookupDefaults =>
+    newLookupInCategories(op,sig,first env,dollar)  --lookup first in my cats
+      or newLookupInAddChain(op,sig,first env,dollar)
   newLookupInTable(op,sig,dollar,env,true)
  
 newLookupInTable(op,sig,dollar,[domain,opvec],flag) ==
   dollar = nil => systemError()
-  $lookupDefaults =>
-    newLookupInCategories(op,sig,domain,dollar)      --lookup first in my cats
-      or newLookupInAddChain(op,sig,domain,dollar)
-  --fast path when called from newGoGet
   success := false
   if $monitorNewWorld then
     sayLooking(concat('"---->",form2String devaluate domain,
@@ -172,7 +174,7 @@ newLookupInTable(op,sig,dollar,[domain,opvec],flag) ==
   numvec := getDomainByteVector domain
   predvec := domainPredicates domain
   max := maxIndex opvec
-  k := getOpCode(op,opvec,max) or return
+  k := getOpCode(op,opvec) or return
     flag => newLookupInAddChain(op,sig,domain,dollar)
     nil
   idxmax := maxIndex numvec
@@ -290,7 +292,7 @@ newLookupInCategories(op,sig,dom,dollar) ==
         success :=
           [.,opvec,:.] := infovec
           max := maxIndex opvec
-          code := getOpCode(op,opvec,max)
+          code := getOpCode(op,opvec)
           null code => nil
           [.,.,.,[.,.,.,:byteVector],:.] := infovec
           endPos :=
@@ -423,7 +425,7 @@ lookupInDomainByName(op,domain,arg) ==
   numvec := getDomainByteVector domain
   predvec := domainPredicates domain
   max := maxIndex opvec
-  k := getOpCode(op,opvec,max) or return nil
+  k := getOpCode(op,opvec) or return nil
   idxmax := maxIndex numvec
   start := vectorRef(opvec,k)
   finish :=

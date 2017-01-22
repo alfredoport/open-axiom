@@ -1,4 +1,4 @@
-# Copyright (C) 2011-2014, Gabriel Dos Reis.
+# Copyright (C) 2011-2017, Gabriel Dos Reis.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -32,18 +32,15 @@
 noinst_PROGRAMS = hammer$(EXEEXT)
 hammer_SOURCES = hammer.cc
 hammer_LDADD = \
-	$(oa_target_libdir)/libOpenAxiom.a
+	$(oa_target_libdir)/libOpenAxiom.a \
+	$(oa_target_libdir)/libopen-axiom-core.a
 
 noinst_LIBRARIES = libOpenAxiom.a
 
 libOpenAxiom_a_SOURCES = \
-	storage.cc string-pool.cc command.cc \
+	string-pool.cc command.cc \
 	filesystem.cc \
 	../io/Input.cc \
-	../io/std-streams.cc \
-	../io/InputFragment.cxx \
-	../syntax/token.cc \
-	../syntax/sexpr.cc \
 	../rt/vm.cc \
 	../rt/Lisp.cc \
 	../rt/Database.cc

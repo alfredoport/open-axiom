@@ -515,7 +515,8 @@ getXmode(x,e) ==
 --=======================================================================
 --              Compute the lookup function (complete or incomplete)
 --=======================================================================
-NRTgetLookupFunction(db,addForm,tbl,env) ==
+NRTgetLookupFunction(db,tbl,env) ==
+  addForm := dbBaseDomainForm db
   $why: local := nil
   domform := dbSubstituteFormals(db,dbConstructorForm db)
   cat := dbCategory db
@@ -1002,7 +1003,7 @@ mkExportFromDescription desc ==
 mkCategoryPackage(db,cat,def,e) ==
   [op,:argl] := dbConstructorForm db
   packageName:= makeDefaultPackageName symbolName op
-  dbConstructorDefault(db) := packageName
+  dbDefaultPackage(db) := packageName
   packageAbb := makeDefaultPackageAbbreviation db
   $options:local := []
   -- This stops the next line from becoming confused
@@ -1501,9 +1502,7 @@ compDefineFunctor1(db,df is ['DEF,form,signature,body],m,$e,$formalArgList) ==
     $uncondAlist: local := nil
     $NRTslot1PredicateList: local := predicatesFromAttributes attributeList
     $NRTattributeAlist: local := genInitialAttributeAlist(db,attributeList)
-    $NRTaddForm: local := nil   -- see compAdd
-    -- Generate slots for arguments first, then implicit parameters,
-    -- then for $NRTaddForm (if any) in compAdd
+    -- Generate slots for arguments first, then implicit parameters
     for x in form.args repeat getLocalIndex(db,x)
     for x in dbImplicitParameters db repeat getLocalIndex(db,x)
     [.,.,$e] := compMakeDeclaration("$",target,$e)
@@ -1553,7 +1552,7 @@ compDefineFunctor1(db,df is ['DEF,form,signature,body],m,$e,$formalArgList) ==
     dbAncestors(db) := computeAncestorsOf(db,nil)
     $insideFunctorIfTrue:= false
     if not $bootStrapMode then
-      dbLookupFunction(db) := NRTgetLookupFunction(db,$NRTaddForm,tbl,$e)
+      dbLookupFunction(db) := NRTgetLookupFunction(db,tbl,$e)
           --either lookupComplete (for forgetful guys) or lookupIncomplete
       $NRTslot1PredicateList :=
         [simpBool x for x in $NRTslot1PredicateList]
@@ -1593,10 +1592,6 @@ compFunctorBody(db,body,m,e) ==
     $insideCategoryPackageIfTrue => dbCapsuleIR db
     not $optExportedFunctionReference => dbCapsuleIR db
     foldExportedFunctionReferences(db,dbCapsuleIR db)
-  body is [op,:.] and op in '(add CAPSULE) => T
-  $NRTaddForm :=
-    body is ["SubDomain",domainForm,predicate] => domainForm
-    body
   T
  
 reportOnFunctorCompilation() ==
@@ -2138,7 +2133,7 @@ compileConstructor1(db,form:=[fn,[key,vl,:bodyl]]) ==
 -- fn is the name of some category/domain/package constructor;
 -- we will cache all of its values on $ConstructorCache with reference
 -- counts
-  dbConstructorKind db = 'category =>
+  dbForCategory? db =>
     first compAndDefine(db,[[fn,['%slam,vl,:bodyl]]])
   dbInstanceCache db = nil =>
     first backendCompile(db,[[fn,['%lambda,vl,:bodyl]]])
@@ -2239,17 +2234,17 @@ compAdd(['add,$addForm,capsule],m,e) ==
   $addFormLhs: local:= $addForm
   db := currentDB e
   if $addForm is ["SubDomain",domainForm,predicate] then
-    $NRTaddForm := domainForm
+    dbBaseDomainForm(db) := domainForm
     getLocalIndex(db,domainForm)
     registerInlinableDomain domainForm
     --need to generate slot for add form since all $ go-get
     --  slots will need to access it
-    [$addForm,.,e]:= compSubDomain1(domainForm,predicate,m,e)
+    [$addForm,.,e]:= compSubDomain1(db,domainForm,predicate,m,e)
   else
-    $NRTaddForm := $addForm
+    dbBaseDomainForm(db) := $addForm
     [$addForm,.,e]:=
       $addForm is ["%Comma",:.] =>
-        $NRTaddForm := ["%Comma",:[getLocalIndex(db,x) for x in $addForm.args]]
+        dbBaseDomainForm(db) := ["%Comma",:[getLocalIndex(db,x) for x in $addForm.args]]
         for x in $addForm.args repeat
           registerInlinableDomain x
         compOrCroak(compTuple2Record $addForm,$EmptyMode,e)
@@ -2272,13 +2267,14 @@ compCapsule(['CAPSULE,:itemList],m,e) ==
 compSubDomain(["SubDomain",domainForm,predicate],m,e) ==
   $addFormLhs: local:= domainForm
   $addForm: local := nil
-  $NRTaddForm := domainForm
-  [$addForm,.,e]:= compSubDomain1(domainForm,predicate,m,e)
+  db := currentDB e
+  dbBaseDomainForm(db) := domainForm
+  [$addForm,.,e]:= compSubDomain1(db,domainForm,predicate,m,e)
   compCapsule(['CAPSULE],m,e)
  
-compSubDomain1(domainForm,predicate,m,e) ==
+compSubDomain1(db,domainForm,predicate,m,e) ==
   [.,.,e]:=
-    compMakeDeclaration("#1",domainForm,addDomain(currentDB e,domainForm,e))
+    compMakeDeclaration("#1",domainForm,addDomain(db,domainForm,e))
   u:=
     compCompilerPredicate(predicate,e) or
       stackSemanticError(["predicate: ",predicate,
@@ -2495,7 +2491,7 @@ compForMode(x,m,e) ==
   $bootStrapMode and m = $Category =>
     op := opOf x
     ident? op and (db := constructorDB op) =>
-      dbConstructorKind db = "category" => [x,m,e]
+      dbForCategory? db => [x,m,e]
       nil
     comp(x,m,e)
   comp(x,m,e)

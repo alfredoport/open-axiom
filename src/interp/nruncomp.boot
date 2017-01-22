@@ -55,12 +55,6 @@ $insideCategoryPackageIfTrue := false
 ++ By default, don't generate info files
 $profileCompiler := false
 
-++
-$NRTaddForm := nil
-
-++
-$NRTderivedTargetIfTrue := false
-
 addDeltaCode db ==
 --NOTES: This function is called from buildFunctor to initially
 --  fill slots in dbTemplate. The dbTemplate so created is stored in the
@@ -81,9 +75,9 @@ addDeltaCode db ==
     for [item,:compItem] in reverse dbUsedEntities db repeat
       domainRef(dbTemplate db,i) := deltaTran(db,item,compItem)
   domainRef(dbTemplate db,$AddChainIndex) :=
-    $NRTaddForm =>
-      $NRTaddForm is ["%Comma",:y] => reverse! y
-      NRTencode(db,$NRTaddForm,$addForm)
+    base := dbBaseDomainForm db =>
+      base is ["%Comma",:y] => reverse! y
+      NRTencode(db,base,$addForm)
     nil
 
 deltaTran(db,item,compItem) ==
@@ -182,12 +176,6 @@ optDeltaEntry(op,sig,dc,kind,e) ==
          MKQ x
      fun := lookupDefiningFunction(op,nsig,ndc)
   fun = nil => nil
-  fun :=
-    fun is ['makeSpadConstant,:.] and
-      (fun' := getFunctionReplacement second fun) =>
-         return fun'
-    cons? fun => first fun
-    fun
   markOperation getFunctionReplacement fun
 
 ++ True if we are interested only in abstract slot, not the actual
@@ -241,7 +229,7 @@ assocIndex: (%Thing,%Form) -> %Maybe %Short
 assocIndex(db,x) ==
   x = nil => x
   x is '$ => 0
-  x = $NRTaddForm => $AddChainIndex
+  x = dbBaseDomainForm db => $AddChainIndex
   dbEntitySlot(db,['%domain,x])
 
 getLocalIndex: (%Thing,%Form) -> %Short
@@ -393,15 +381,15 @@ stuffDomainSlots dollar ==
   domname := devaluate dollar
   infovec := property(opOf domname,'infovec)
   lookupFunction := symbolFunction getLookupFun infovec
-  template := infovec.0
+  template := first infovec
   if vectorRef(template,$AddChainIndex) then
     stuffSlot(dollar,$AddChainIndex,vectorRef(template,$AddChainIndex))
-  for i in ($NRTbase + # rest domname)..maxIndex template
+  for i in ($NRTbase + # domname.args)..maxIndex template
     | item := vectorRef(template,i) repeat
       stuffSlot(dollar,i,item)
-  domainDirectory(dollar) := [lookupFunction,dollar,infovec.1]
-  domainAttributes(dollar) := infovec.2
-  proto4 := infovec.3
+  domainDirectory(dollar) := [lookupFunction,dollar,second infovec]
+  domainAttributes(dollar) := third infovec
+  proto4 := fourth infovec
   domainData(dollar) := 
     vector? CDDR proto4 => [COPY_-SEQ first proto4,:rest proto4]   --old style
     bitVector := domainPredicates dollar
@@ -490,8 +478,8 @@ buildFunctor(db,sig,code,$locals,$e) ==
     argStuffCode :=
       [['%store,['%tref,'$,i],v] for i in $NRTbase.. for v in $FormalMapVariableList
 	for arg in args]
-    if symbolMember?($NRTaddForm,$locals) then
-       addargname := $FormalMapVariableList.(symbolPosition($NRTaddForm,$locals))
+    if symbolMember?(dbBaseDomainForm db,$locals) then
+       addargname := $FormalMapVariableList.(symbolPosition(dbBaseDomainForm db,$locals))
        argStuffCode := [['%store,['%tref,'$,$AddChainIndex],addargname],:argStuffCode]
     [['stuffDomainSlots,'$],:argStuffCode,
        :predBitVectorCode2,storeOperationCode]
@@ -567,7 +555,7 @@ makeSlot1Info db ==
 -- a:T == b add c  --- slot1 directory has #s for entries defined in c
 -- a:T == b        --- slot1 has all slot #s = nil (see compFunctorBody)
 -- a == b add c    --- not allowed (line 7 of getTargetFromRhs)
--- a == b          --- $NRTderivedTargetIfTrue = true; set directory to nil
+-- a == b          --- set directory to empty
   pairlis :=
     $insideCategoryPackageIfTrue =>
       [[first dbParameters db,:'_$],:dbFormalSubst db]
@@ -575,10 +563,9 @@ makeSlot1Info db ==
   exports :=
     transformOperationAlist applySubst(pairlis,categoryExports dbDomainShell db)
   opList :=
-    $NRTderivedTargetIfTrue => 'derived
     $insideCategoryPackageIfTrue => slot1Filter exports
     exports
-  addList := applySubst(pairlis,$NRTaddForm)
+  addList := applySubst(pairlis,dbBaseDomainForm db)
   [dbConstructor db,[addList,:opList]]
 
 slot1Filter opList ==

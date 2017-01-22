@@ -141,19 +141,21 @@ macro domainData d ==
 structure %CompilationData ==
   Record(subst: %Substitution,idata: %Substitution,bytes: List %Fixnum,
     shell: %Vector %Thing, items: %Buffer %Pair(%SourceEntity,%Code),
-      capsule: %List %Thing, lib: %Libstream,outpath: %Pathname) with
-        cdSubstitution == (.subst)
-        cdImplicits == (.idata)
-        cdBytes == (.bytes)
-        cdShell == (.shell)
-        cdItems == (.items)
-        cdCapsule == (.capsule)
-        cdLib == (.lib)
-        cdOutput == (.outpath)
+      capsule: %List %Thing, base: %Thing,
+        lib: %Libstream,outpath: %Pathname) with
+            cdSubstitution == (.subst)
+            cdImplicits == (.idata)
+            cdBytes == (.bytes)
+            cdShell == (.shell)
+            cdItems == (.items)
+            cdCapsule == (.capsule)
+            cdBase == (.base)
+            cdLib == (.lib)
+            cdOutput == (.outpath)
 
 ++ Make a fresh compilation data structure.
 makeCompilationData() ==
-  mk%CompilationData(nil,nil,nil,nil,[nil,:0],nil,nil,nil)
+  mk%CompilationData(nil,nil,nil,nil,[nil,:0],nil,nil,nil,nil)
 
 ++ Subsitution that replaces parameters with formals.
 macro dbFormalSubst db ==
@@ -232,9 +234,9 @@ macro dbSubstituteQueries(db,x) ==
 dbSubstituteAllQuantified(db,x) ==
   applySubst([:dbQuerySubst db,:dbFormalSubst db],x)
 
-++ This predicate holds if this DB is for a category constructor.  
-dbForCategory? db ==
-  db ~= nil and dbConstructorKind db is 'category
+++ During compilation, return the base domain form of a domain defition.
+macro dbBaseDomainForm db ==
+  cdBase dbCompilerData db
 
 --%
 $SetCategory ==
@@ -1476,13 +1478,20 @@ makeCapsuleFunctionContext(db,fun) ==
           | symbolEq?(fun,rest impl)]
              or systemError ['"cannot find context for",:bright fun]
 
+++ Return the list of implementations candidate for a given domain slot.
+candidatesForSlot(db,slot) ==
+  [x for x in dbCapsuleDefinitions db | x is [.,=slot,:.]]
+
 ++ Return the linkage name of the exported operation associated with
 ++ slot number `slot'.  A nil result means that either the operation
 ++ is not defined, or the scope predicates don't match.
 getCapsuleDirectoryEntry(fc,slot) ==
   pred' := fcPredicate fc
-  or/[rest impl for [[.,:pred],:impl] in dbCapsuleDefinitions fcDatabase fc
-        | first impl = slot and (pred is true or pred = pred')]
+  candidates := candidatesForSlot(fcDatabase fc ,slot) =>
+    -- FIXME: consider subsumption?  How often does this occur?
+    or/[func for [[.,:pred],.,:func] in candidates
+          | pred = pred' or pred is true]
+  nil
 
 ++ `defs' is a list of function definitions from the current domain.
 ++ Walk that list and replace references to unconditional operations
@@ -1643,7 +1652,7 @@ expandFormTemplate(shell,args,slot) ==
   integer? slot =>
     slot = 0 => "$"
     slot = 2 => "$$"
-    expandFormTemplate(shell,args,vectorRef(shell,slot))
+    expandFormTemplate(shell,args,domainRef(shell,slot))
   slot isnt [.,:.] => slot
   slot is ["local",parm] and (n := formal? parm) => 
     args.n   -- FIXME: we should probably expand with dual signature
@@ -1659,7 +1668,7 @@ equalFormTemplate(shell,args,slot,form) ==
   integer? slot =>
     slot = 0 => form = "$"
     slot = 2 => form = "$$"
-    equalFormTemplate(shell,args,vectorRef(shell,slot),form)
+    equalFormTemplate(shell,args,domainRef(shell,slot),form)
   slot is ["local",parm] and (n := formal? parm) => 
     equalFormTemplate(shell,args,args.n,form)
   slot is ['%eval,val] => form = val
@@ -1678,19 +1687,20 @@ equalFormTemplate(shell,args,slot,form) ==
 ++    nil         => function not defined by `shell'.
 ++    "ambiguous" => too many candidates
 ++    <number>    => slot number of unique matching function.
-getFunctionTemplate(sig,start,end,shell,args,funDesc) ==
+matchSignatureInTemplate(sig,start,end,shell,args,funDesc) ==
   nargs := #rest sig
   loc := nil                           -- candidate locations
   while loc ~= "ambiguous" and start < end repeat
     n := arrayRef(funDesc,start)       -- arity of current operator
-    PROGN
+    do
       -- Skip if arity mismatch
       i := start
       n ~= nargs => nil
+      -- FIXME: Check the corresponding predicate.
       -- We are not interested in predicates, at this point.
       -- Skip if this operator's signature does not match 
       i := i + 2
-      or/[not equalFormTemplate(shell,args,funDesc.k,t) 
+      or/[not equalFormTemplate(shell,args,arrayRef(funDesc,k),t) 
            for k in i.. for t in sig] => nil
       -- Grab the location of this match
       loc := 
@@ -1700,10 +1710,14 @@ getFunctionTemplate(sig,start,end,shell,args,funDesc) ==
   loc
 
 ++ Subroutine of lookupDefiningFunction.
-lookupInheritedDefiningFunction(op,sig,shell,args,slot) ==
+lookupRemoteDefiningFunction(op,sig,shell,args,slot) ==
   dom := expandFormTemplate(shell,args,slot)
   dom isnt [.,:.] or dom is ["local",:.] => nil
-  lookupDefiningFunction(op,sig,dom)
+  fun := lookupDefiningFunction(op,sig,dom) or return nil
+  -- Note: In general, functions needing their domain enviornment
+  --       to operate properly can't be safely pulled out.
+  ident? fun and getFunctionReplacement fun => fun
+  fun
 
 ++ Return the name of the function definition that explicitly implements
 ++ the operation `op' with signature `sig' in the domain of 
@@ -1723,22 +1737,25 @@ lookupDefiningFunction(op,sig,dc) ==
   --      such as AN ~> IAN ~> EXPR INT ~> AN that prevents
   --      us from full evaluation.  
   args = nil and symbolMember?(ctor,$SystemInlinableConstructorNames) =>
-    compiledLookup(op,sig,dc)
+    env := compiledLookup(op,sig,dc) or return nil
+    env is ['newGoGet,:.] => nil -- FIXME: Follow the link!
+    env is ['makeSpadConstant,fun,:.] => BPINAME fun
+    BPINAME first env
   -- 1.2. Don't look into defaulting package
-  isDefaultPackageName ctor => nil
+  dbDefaultPackage? db => nil
   infovec := property(ctor,'infovec) or return nil
   -- 1.3. We need information about the original domain template
   shell := dbTemplate db               -- domain template
   opTable := second infovec            -- operator-code table
   opTableLength := #opTable
-  forgetful := dbLookupFunction db is 'lookupIncomplete
 
   -- 2. Get the address range of op's descriptor set
   [.,.,.,:funDesc] := fourth infovec
-  index := getOpCode(op, opTable, opTableLength - 1)
+  index := getOpCode(op,opTable)
   -- 2.1. For a forgetful functor, try the add chain
   index = nil =>
-    forgetful and lookupInheritedDefiningFunction(op,sig,shell,args,5)
+    dbLookupFunction db is 'lookupIncomplete and
+      lookupRemoteDefiningFunction(op,sig,shell,args,$AddChainIndex)
   -- 2.2. The operation is either defined here, or is available
   --      from category package defaults.
   limit := 
@@ -1746,11 +1763,11 @@ lookupDefiningFunction(op,sig,dc) ==
     #funDesc 
 
   -- 3. Locate the descriptor with matching signature
-  loc := getFunctionTemplate(sig,opTable.index,limit,shell,args,funDesc)
+  loc := matchSignatureInTemplate(sig,vectorRef(opTable,index),limit,shell,args,funDesc)
 
   -- 4. Look into the add-chain if necessary
   loc = nil =>
-    lookupInheritedDefiningFunction(op,sig,shell,args,domainRef(shell,5))
+    lookupRemoteDefiningFunction(op,sig,shell,args,$AddChainIndex)
 
   -- 5. Give up if the operation is overloaded on semantics predicates.
   loc is 'ambiguous => nil
@@ -1764,8 +1781,7 @@ lookupDefiningFunction(op,sig,dc) ==
     not integer? idx => nil          -- a UFO?
     loc := arrayRef(funDesc,idx + 1)
     if loc = 0 then loc := 5
-    domainRef(shell,loc) = nil => nil
-    lookupInheritedDefiningFunction(op,sig,shell,args,shell.loc)
+    lookupRemoteDefiningFunction(op,sig,shell,args,loc)
   -- 6.3. Whatever.
   fun
 

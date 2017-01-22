@@ -552,6 +552,7 @@ oa_lisp_flavor = @oa_lisp_flavor@
 oa_optimize_options = @oa_optimize_options@
 oa_quiet_flags = @oa_quiet_flags@
 oa_shrlib_flags = @oa_shrlib_flags@
+oa_shrlib_prefix = @oa_shrlib_prefix@
 oa_shrobj_flags = @oa_shrobj_flags@
 oa_src_algdir = @oa_src_algdir@
 oa_src_datadir = @oa_src_datadir@
@@ -1980,7 +1981,8 @@ strap-1/ORDSET.$(FASLEXT): strap-1/SETCAT.$(FASLEXT) \
 	strap-1/ORDTYPE.$(FASLEXT)
 
 strap-1/FINITE.$(FASLEXT): strap-1/SETCAT.$(FASLEXT) \
-	strap-0/OAMONS.$(FASLEXT) strap-0/PI.$(FASLEXT)
+	strap-0/OAMONS.$(FASLEXT) strap-0/PI.$(FASLEXT) \
+	strap-0/LIST.$(FASLEXT)
 
 strap-1/ORDFIN.$(FASLEXT): strap-1/ORDSET.$(FASLEXT) \
 	strap-1/FINITE.$(FASLEXT)

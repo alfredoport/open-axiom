@@ -40,6 +40,8 @@ IndexedDirectProductCategory(A:BasicType,S:OrderedType): Category ==
        ++ leadingSupport(z) returns the index of leading
        ++ (with respect to the ordering on the indexing set) monomial of z.
        ++ Error: if z has no support.
+    leadingTerm : % -> IndexedProductTerm(A,S)
+       ++ The leading term of an indexed product.
     reductum:      % -> %
        ++ reductum(z) returns a new element created by removing the
        ++ leading coefficient/support pair from the element z.
@@ -106,15 +108,12 @@ IndexedDirectProductObject(A,S): Public == Private where
     x = y == rep x = rep y
     monomial(r,s) == per [term(s,r)]
     map(f,x) == per [term(index tm,f coefficient tm) for tm in rep x]
+    leadingTerm x ==
+      null terms x => error "Cannot take the leadingTerm of an empty product"
+      first terms x
     reductum x == per rest rep x
-    leadingCoefficient x  ==
-       null rep x =>
-         error "Can't take leadingCoefficient of empty product element"
-       coefficient first rep x
-    leadingSupport x  ==
-       null rep x =>
-         error "Can't take leadingCoefficient of empty product element"
-       index first rep x
+    leadingCoefficient x  == coefficient leadingTerm x
+    leadingSupport x  == index leadingTerm x
     terms x == rep x
     convert l == per l
     combineWithIf(u, v, f, p) ==
@@ -163,10 +162,6 @@ IndexedDirectProductAbelianMonoid(A:AbelianMonoid,S:OrderedType):
        Term == IndexedProductTerm(A,S)
        import Term
 
-       r: A
-       n: NonNegativeInteger
-       f: A -> A
-       s: S
        0  == convert nil$List(Term)
        zero? x ==  null terms x
 
@@ -215,7 +210,7 @@ IndexedDirectProductAbelianMonoid(A:AbelianMonoid,S:OrderedType):
          else qsetrest!(endcell, end)
          convert res
 
-       n * x  ==
+       n:NonNegativeInteger * x:%  ==
          zero? n => 0
          one? n => x
          convert [term(index u,a) for u in terms x
@@ -285,35 +280,30 @@ IndexedDirectProductOrderedAbelianMonoid(A:OrderedAbelianMonoid,S:OrderedType):
 IndexedDirectProductOrderedAbelianMonoidSup(A:OrderedAbelianMonoidSup,S:OrderedSet):
     Join(OrderedAbelianMonoidSup,IndexedDirectProductCategory(A,S))
  ==  IndexedDirectProductOrderedAbelianMonoid(A,S) add
-    --representations
-       Term:=  Record(k:S,c:A)
-       Rep:=  List Term
-       x,y: %
-       r: A
-       s: S
-
        subtractIfCan(x,y) ==
-         empty? y => just x
-         empty? x => nothing
-         x.first.k < y.first.k => nothing
-         x.first.k > y.first.k =>
-             t:= subtractIfCan(x.rest, y)
+         zero? y => just x
+         zero? x => nothing
+         leadingSupport x < leadingSupport y => nothing
+         leadingSupport x > leadingSupport y =>
+             t := subtractIfCan(reductum x, y)
              t case nothing => nothing
-             just cons( x.first, t)
-         u := subtractIfCan(x.first.c, y.first.c)
+             just convert cons(leadingTerm x, terms t)
+         u := subtractIfCan(leadingCoefficient x, leadingCoefficient y)
          u case nothing => nothing
-         zero? u => subtractIfCan(x.rest, y.rest)
-         t := subtractIfCan(x.rest, y.rest)
+         t := subtractIfCan(reductum x, reductum y)
+         zero? u => t
          t case nothing => nothing
-         just cons([x.first.k,u],t)
+         just convert cons(term(leadingSupport x,u),terms t)
 
        sup(x,y) ==
-         empty? y => x
-         empty? x => y
-         x.first.k < y.first.k => cons(y.first,sup(x,y.rest))
-         x.first.k > y.first.k => cons(x.first,sup(x.rest,y))
-         u:=sup(x.first.c, y.first.c)
-         cons([x.first.k,u],sup(x.rest,y.rest))
+         zero? y => x
+         zero? x => y
+         leadingSupport x < leadingSupport y =>
+           convert cons(leadingTerm y,terms sup(x,reductum y))
+         leadingSupport x > leadingSupport y =>
+           convert cons(leadingTerm x,terms sup(reductum x,y))
+         u := sup(leadingCoefficient x, leadingCoefficient y)
+         convert cons(term(leadingSupport x,u),terms sup(reductum x,reductum y))
 
 @
 \section{domain IDPAG IndexedDirectProductAbelianGroup}

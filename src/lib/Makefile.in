@@ -1,4 +1,4 @@
-# Copyright (C) 2007-2014, Gabriel Dos Reis.
+# Copyright (C) 2007-2017, Gabriel Dos Reis.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -30,8 +30,16 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-
-core_SOURCES = bsdsignal.c cfuns-c.c sockio-c.c
+core_SOURCES = \
+	bsdsignal.cxx \
+	cfuns-c.cxx \
+	sockio-c.cxx \
+	../utils/storage.cxx \
+	../io/std-streams.cxx \
+	../io/InputFragment.cxx \
+	../syntax/token.cxx \
+	../syntax/sexpr.cxx \
+	../syntax/Parser.cxx
 
 terminal_io_SOURCES = cursor.c edin.c fnct_key.c openpty.c prt.c wct.c
 
@@ -52,22 +60,22 @@ unused_SOURCES = emupty.c
 
 libopen_axiom_core_SOURCES = $(core_SOURCES)
 ifeq (@oa_use_libtool_for_shared_lib@,no)
-libopen_axiom_core_objects = $(libopen_axiom_core_SOURCES:.c=.$(OBJEXT))
+libopen_axiom_core_objects = $(libopen_axiom_core_SOURCES:.cxx=.$(OBJEXT))
 else
-libopen_axiom_core_objects = $(libopen_axiom_core_SOURCES:.c=.lo)
+libopen_axiom_core_objects = $(libopen_axiom_core_SOURCES:.cxx=.lo)
 endif
 libspad_objects = $(libspad_SOURCES:.c=.lo)
 
 oa_installed_corelib = $(oa_target_libdir)/libopen-axiom-core.$(LIBEXT)
 ifeq (@oa_use_dynamic_lib@,yes)
-oa_installed_corelib += $(oa_target_libdir)/libopen-axiom-core$(SHREXT)
+oa_installed_corelib += $(oa_target_libdir)/$(oa_shrlib_prefix)open-axiom-core$(SHREXT)
 endif
 
 subdir = src/lib/
 
 .PHONY: all all-lib
 .SUFFIXES:
-.SUFFIXES: .o .lib .obj .c .h
+.SUFFIXES: .o .lib .obj .c .h .cxx
 
 all: all-ax
 
@@ -83,36 +91,37 @@ $(oa_target_libdir)/libopen-axiom-core.$(LIBEXT): \
 
 # Don't put the shared lib here -- place it directly in its final home;
 # we don't want to pick it accidently.
-$(oa_target_libdir)/libopen-axiom-core$(SHREXT): \
+$(oa_target_libdir)/$(oa_shrlib_prefix)open-axiom-core$(SHREXT): \
 	$(libopen_axiom_core_objects)
 	$(mkdir_p) $(oa_target_libdir)
 	$(CXXLINK_SHRLIB) $(oa_shrlib_flags) -o $@ \
 		$(libopen_axiom_core_objects) \
 		@oa_c_runtime_extra@ -lm
 
-libopen-axiom-core.$(LIBEXT): $(libopen_axiom_core_SOURCES:.c=.lo)
-	$(LINK) -o $@ $(libopen_axiom_core_SOURCES:.c=.lo)
+libopen-axiom-core.$(LIBEXT): $(libopen_axiom_core_SOURCES:.cxx=.lo)
+	$(LINK) -o $@ $(libopen_axiom_core_SOURCES:.cxx=.lo)
 
 libspad.$(LIBEXT): $(libspad_objects)
 	$(LINK) -o $@ $(libspad_objects)
 
 .PRECIOUS: %.$(OBJEXT)
 
+%.$(OBJEXT) %.lo: %.cxx $(oa_c_macros_h)
+	$(COMPILE) $(oa_shrobj_flags) -no-suppress -o $@ $(CFLAGS) \
+		$(oa_includes) $(AXIOM_X11_CFLAGS) $<
+
 %.$(OBJEXT) %.lo: %.c $(oa_c_macros_h)
 	$(COMPILE) $(oa_shrobj_flags) -no-suppress -o $@ $(CFLAGS) \
 		$(oa_includes) $(AXIOM_X11_CFLAGS) $<
 
-# This is a support library, so it does not change often and
-# we don't need to remove the produced objects in mostlyclean.
-# The remoal is done by clean.
 mostlyclean-local:
 	@rm -f *.$(OBJEXT) *.lo
-
-clean-local: mostlyclean-local
-	@rm -f $(oa_target_libdir)/libopen-axiom-core$(SHREXT)
+	@rm -f $(oa_target_libdir)/$(oa_shrlib_prefix)open-axiom-core$(SHREXT)
 	@rm -f libopen-axiom-core.$(LIBEXT)
 	@rm -f libspad.$(LIBEXT)
 	@rm -fr .libs _libs
 	@rm -f stamp
+
+clean-local: mostlyclean-local
 
 distclean-local: clean-local

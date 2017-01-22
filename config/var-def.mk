@@ -61,6 +61,7 @@ CXXFLAGS = @CXXFLAGS@
 LDFLAGS = @LDFLAGS@
 OBJEXT = @OBJEXT@
 EXEEXT = @EXEEXT@
+oa_shrlib_prefix = @oa_shrlib_prefix@
 # this includes leading period
 SHREXT = @shared_ext@
 # extension of the archive library; this does not include period
@@ -192,7 +193,10 @@ oa_use_x = @oa_use_x@
 AXIOM_X11_CFLAGS = @X_CFLAGS@ 
 AXIOM_X11_LDFLAGS = @X_LIBS@ @X_PRE_LIBS@ -lX11 @X_EXTRA_LIBS@
 
-oa_includes = -I$(oa_src_srcdir)/include -I$(oa_configdir)
+oa_includes = \
+	-I$(oa_src_srcdir)/include \
+	-I$(oa_configdir) \
+	-I$(oa_target_includedir)
 
 ## Where the staging build directory is found
 AXIOM = $(top_builddir)/$(target)

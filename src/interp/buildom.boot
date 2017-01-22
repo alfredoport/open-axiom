@@ -157,7 +157,7 @@ compiledLookup(op,sig,dollar) ==
   basicLookup(op,sig,dollar,dollar)
 
 lookupInDomainVector(op,sig,domain,dollar) ==
-  SPADCALL(op,sig,dollar,domainRef(domain,1))
+  SPADCALL(op,sig,dollar,domainDirectory domain)
 
 lookupInDomain(op,sig,addFormDomain,dollar,index) ==
   addFormCell := vectorRef(addFormDomain,index) =>
@@ -178,8 +178,7 @@ lookupInDomainAndDefaults(op,sig,domain,dollar,useDefaults) ==
 
 basicLookup(op,sig,domain,dollar) ==
   item := domainDirectory domain
-  cons? item and first item in '(lookupInDomain lookupInTable) => 
-    lookupInDomainVector(op,sig,domain,dollar)
+  item is ['lookupInTable,:.] => lookupInDomainVector(op,sig,domain,dollar)
   ----------new world code follows------------
   u := lookupInDomainAndDefaults(op,sig,domain,dollar,false) => u
   lookupInDomainAndDefaults(op,sig,domain,dollar,true)
@@ -276,7 +275,6 @@ lookupInAddChain(op,sig,addFormDomain,dollar) ==
 --       Lookup Function in Slot 1 (via SPADCALL)
 --=======================================================
 lookupInTable(op,sig,dollar,[domain,table]) ==
-  table is "derived" => lookupInAddChain(op,sig,domain,dollar)
   success := nil             -- lookup result
   someMatch := false
   while not success for [sig1,:code] in symbolTarget(op,table) repeat
@@ -305,7 +303,7 @@ lookupInTable(op,sig,dollar,[domain,table]) ==
       slot
   success isnt 'failed and success ~= nil => success
   subsumptionSig ~= nil and
-    (u := SPADCALL(op,subsumptionSig,dollar,domainRef(domain,1))) => u
+    (u := lookupInDomainVector(op,subsumptionSig,domain,dollar)) => u
   someMatch => lookupInAddChain(op,sig,domain,dollar)
   nil
 

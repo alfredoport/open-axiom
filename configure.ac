@@ -1,4 +1,4 @@
-dnl Copyright (C) 2006-2016, Gabriel Dos Reis.
+dnl Copyright (C) 2006-2017, Gabriel Dos Reis.
 dnl All rights reserved.
 dnl
 dnl Redistribution and use in source and binary forms, with or without
@@ -33,7 +33,7 @@ dnl  Makefiles for building OpenAxiom interpreter, compiler, libraries, and
 dnl  auxiliary tools where appropriate.
 dnl
 
-AC_INIT([OpenAxiom], [1.5.0-2016-01-24], 
+AC_INIT([OpenAxiom], [1.5.0-2017-01-15], 
         [open-axiom-bugs@lists.sf.net])
 
 dnl Most of the macros used in this configure.ac are defined in files
@@ -56,6 +56,9 @@ AC_PREREQ([2.62])
 
 dnl Simple sanity check.
 AC_CONFIG_SRCDIR(src/Makefile.in)
+
+dnl Look for PATHs to consider, on some exotic platforms.
+OPENAXIOM_CHECK_FOR_ADDITIONAL_PATHS
 
 
 open_axiom_installdir=$libdir/open-axiom/$target/$PACKAGE_VERSION
@@ -88,7 +91,7 @@ AC_LANG([C++])
 
 OPENAXIOM_HOST_COMPILERS
 AM_CONDITIONAL([OA_USE_LLVM], [test -n $oa_use_llvm])
-OPENAXIOM_REQUIRE_CXX11
+OPENAXIOM_REQUIRE_CXX14
 OPENAXIOM_EXTRA_CXX_OPTIONS
 AM_CONDITIONAL([OA_BUILD_GCL], [test x$oa_include_gcl = xyes])
 AM_CONDITIONAL([OA_ECL_RT], [test x$oa_lisp_flavor = xecl])

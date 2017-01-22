@@ -43,6 +43,20 @@ case $host in
 esac
 ])
 
+dnl ------------------------------------------
+dnl -- OPENAXIOM_CHECK_FOR_ADDITIONAL_PATHS --
+dnl ------------------------------------------
+AC_DEFUN([OPENAXIOM_CHECK_FOR_ADDITIONAL_PATHS],[
+# If there is a MacPort installation of QT5, use it.
+case $host in
+     *darwin*)
+	if test -d /opt/local/libexec/qt5; then
+	   PATH=/opt/local/libexec/qt5/bin:$PATH
+	fi
+	;;
+esac
+])
+
 dnl ----------------------------------
 dnl -- OPENAXIOM_REJECT_ROTTED_LISP --
 dnl ----------------------------------
@@ -242,11 +256,11 @@ esac
 ])
 
 dnl -----------------------------
-dnl -- OPENAXIOM_REQUIRE_CXX11 --
+dnl -- OPENAXIOM_REQUIRE_CXX14 --
 dnl -----------------------------
-AC_DEFUN([OPENAXIOM_REQUIRE_CXX11],[
+AC_DEFUN([OPENAXIOM_REQUIRE_CXX14],[
 oa_saved_cxxflags=$CXXFLAGS
-CXXFLAGS="-std=c++11"
+CXXFLAGS="-std=c++14"
 AC_MSG_CHECKING([whether $CXX supports $CXXFLAGS])
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM([])],
   [AC_MSG_RESULT([yes])]
@@ -618,7 +632,7 @@ AC_DEFINE_UNQUOTED([OPENAXIOM_HOST_LISP_PRECISION],
 dnl --------------------------------------
 dnl -- OPENAXIOM_DYNAMIC_MODULE_SUPPORT --
 dnl --------------------------------------
-dnl Infer compiler flags and file extensions associated
+dnl Infer compiler flags, file prefix and extensions associated
 dnl with dynamic module support.
 dnl We need to link some C object files into in the Lisp images we
 dnl use.  Some Lisps (e.g. GCL, ECL) support inclusion of ``ordinary''
@@ -632,6 +646,7 @@ AC_DEFUN([OPENAXIOM_DYNAMIC_MODULE_SUPPORT],[
 AC_SUBST(oa_use_libtool_for_shared_lib)
 AC_SUBST(oa_shrobj_flags)
 AC_SUBST(oa_shrlib_flags)
+AC_SUBST(oa_shrlib_prefix)
 oa_use_libtool_for_shared_lib=no
 oa_shrobj_flags=
 oa_shrlib_flags=
@@ -640,6 +655,8 @@ oa_shrlib_flags=
 LT_PREREQ([2.2.6])
 LT_INIT([pic-only dlopen win32-dll shared])
 AC_SUBST([LIBTOOL_DEPS])
+# Most targets use 'lib' prefix, as in 'libOpenAxiom'.
+oa_shrlib_prefix='lib'
 # Give me extension of libraries
 AC_SUBST(shared_ext)
 AC_SUBST(libext)
@@ -649,6 +666,8 @@ case $host in
     *mingw*|*cygwin*)
        oa_shrobj_flags='-prefer-pic'
        oa_shrlib_flags="-shared -Wl,--export-all-symbols"
+       # Windows platforms don't need a prefix
+       oa_shrlib_prefix=
        ;;
     *darwin*)
        oa_shrobj_flags='-dynamic'
@@ -1021,7 +1040,8 @@ AC_PATH_XTRA
 ## inspired by AC_PATH_XTRA.  I don't have time to get to that 
 ## complication right now.  Will fix later.
 ## But we can check for the existence of <X11/xpm.h>
-X_PRE_LIBS="-lXpm $X_PRE_LIBS"
+## Also check for Xt headers
+X_PRE_LIBS="-lXpm -lXt $X_PRE_LIBS"
 AC_SUBST(X_PRE_LIBS)
 
 ## If the system supports X11, then build graphics
@@ -1037,6 +1057,8 @@ else
     LDFLAGS="$X_PRE_LIBS $X_LIBS $X_EXTRA_LIBS"
     AC_CHECK_HEADERS([X11/xpm.h],[],
       [AC_MSG_ERROR([The header <X11/xpm.h> could not be found.  Install Xpm development package and re-start the configuration process.])])
+    AC_CHECK_HEADERS([X11/Intrinsic.h],[],
+      [AC_MSG_ERROR([The header <X11/Intrinsic.h> could not be found.  Install Xt development package and re-start the configuration process.])])
     oa_use_x=yes
     oa_c_runtime="$oa_c_runtime graphics"
     LDFLAGS=$oa_saved_ldflags

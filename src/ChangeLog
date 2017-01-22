@@ -1,3 +1,43 @@
+2017-01-15  Gabriel Dos Reis  <gdr@axiomatics.org>
+
+	* boot/bemol.cc: Use parser from libopen-axiom-core
+
+2017-01-15  Gabriel Dos Reis  <gdr@axiomatics.org>
+
+	* include/open-axiom/token (TokenValue::Indent,
+	TokenValue::Unindent, TokenValue::Justify): Move definition to..
+	* include/open-axiom/token-value: ...here.
+	* syntax/token.cxx (operator<<): Adjust.
+
+2017-01-02  Gabriel Dos Reis  <gdr@axiomatics.org>
+
+	* lib/Makefile.in (core_SOURCES): Include files for IO,
+	tokenization, and parsing.
+	* include/open-axiom/Parser (boot_to_lisp): New exported entry point.
+	* boot/Makefile.am (bemol_LDADD): Add libopen-axiom-core
+	* include/open-axiom/dialect: Add documentation.
+	* syntax/Parser.cxx: New.
+	* utils/Makefile.am (libOpenAxiom_a_SOURCES): Adjust.
+
+2016-12-29  Gabriel Dos Reis  <gdr@axiomatics.org>
+
+	* lisp/core.lisp.in ($NativeModulePrefix): Define and export.
+	* boot/ast.boot (%Ast): Ad %LoadUnit alternative.
+	(genImportDeclaration): Take a third parameter.  Update caller.
+	* boot/parser.boot (bpProvenance): New.
+	(bpImport): Use it to parse load unit specification.
+	* boot/translator.boot ($foreignLoadUnits): New.
+	(translateToplevel): Update.
+	(loadNativeModule): Tidy.
+	(loadSystemRuntimeCore): Likewise.
+	* lib/Makefile.in: Tidy reference to shared library pathname.
+	* lisp/Makefile.in (edit): Translate oa_shrlib_prefix.
+
+2016-12-26  Gabriel Dos Reis  <gdr@axiomatics.org>
+
+	* interp/i-output.boot (appChar): Don't modify string parameter.
+	* algebra/Makefile.am (strap-1/FINITE.$(FASLEXT)): Update dependency.
+
 2016-01-31  Gabriel Dos Reis  <gdr@axiomatics.org>
 
 	Breaking change from previous version: No more support for command

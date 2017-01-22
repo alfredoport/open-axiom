@@ -1,5 +1,5 @@
 // -*- C++ -*-
-// Copyright (C) 2013-2014, Gabriel Dos Reis.
+// Copyright (C) 2013-2017, Gabriel Dos Reis.
 // All rights reserved.
 // Written by Gabriel Dos Reis.
 //
@@ -37,8 +37,8 @@
 #include <stdint.h>
 #include <stack>
 #include <iosfwd>
-#include <open-axiom/Input>
 #include <open-axiom/dialect>
+#include <open-axiom/InputFragment>
 
 namespace OpenAxiom {
    // Categorization of Boot and Spad tokens.
@@ -66,31 +66,16 @@ namespace OpenAxiom {
 #define OPENAXIOM_DEFINE_TOKEN(T, ...)  T,
 #include <open-axiom/token-value>
 #undef OPENAXIOM_DEFINE_TOKEN
-      Artificial,               // Tokens after this are artificial
-      Indent,                   // new line indentation, greater than previous
-      Unindent,                 // new line indentation, less than previous
-      Justify,                  // align indentation with preceding line.
 
       EndOfStream               // end of token stream
    };
 
    std::ostream& operator<<(std::ostream&, TokenValue);
 
-   // Datatypes for locating lines and columns.
-   using LineNumber = std::size_t;
-   using ColumnIndex = std::size_t;
-
-   struct Locus {
-      LineNumber line;
-      ColumnIndex column;
-   };
-
-   std::ostream& operator<<(std::ostream&, const Locus&);
-
-   // Program text region
+   // Program text region, with a fragment.
    struct Region {
-      Locus start;
-      Locus end;
+      FragmentCursor start;
+      FragmentCursor end;
    };
 
    // Given a symbolic or alphabetic token, retrieve its category
@@ -107,37 +92,7 @@ namespace OpenAxiom {
    TokenClassification classify(const std::string&);
 
    // Token data structure: a region of text with a classification.
-   struct Token : TokenClassification, Region {
-      using Location = Locus;
-   };
-
-   // Cursor into a fragment.
-   struct FragmentCursor {
-      std::size_t line;         // index of a line in a fragment
-      std::size_t column;       // column number at line.
-
-      inline FragmentCursor& operator++() {
-         ++column;
-         return *this;
-      }
-
-      inline FragmentCursor operator++(int) {
-         auto tmp = *this;
-         ++*this;
-         return tmp;
-      }
-
-      inline FragmentCursor& operator--() {
-         --column;
-         return *this;
-      }
-
-      inline FragmentCursor operator--(int) {
-         auto tmp = *this;
-         --*this;
-         return tmp;
-      }
-   };
+   struct Token : Region, TokenClassification { };
 
    // -- Exception types
    struct EndOfStringUnseen {
@@ -152,50 +107,32 @@ namespace OpenAxiom {
 
    // Object of this datatype decompose a program fragment into a
    // token stream.  The tokens are of type indicated by Tok.
-   template<typename Frag, typename Tok>
+   template<typename Tok>
    struct Tokenizer {
-      Tokenizer(Frag& f)
+      Tokenizer(Fragment& f)
             : frag(f),
               pos{ 0, frag.front().indent }
       {
-         indents.push(pos.column);
+         indents.push(pos);
       }
 
       bool eos() const {
-         return pos.line >= frag.size()
-            or (pos.line + 1 == frag.size() and pos.column >= frag.back().size());
+         return pos.line >= frag.size();
       }
 
       Tok get(Language = Language::Spad);
    private:
-      Frag& frag;
+      Fragment& frag;
       FragmentCursor pos;
-      std::stack<ColumnIndex> indents;
+      std::stack<FragmentCursor> indents;
 
       std::size_t line_length() const { return frag(pos).size(); }
-      LineNumber next_line_number() const {
-         return pos.line + 1 < frag.size()
-            ? frag[pos.line + 1].number
-            : frag.back().number + 1;
-      }
-      ColumnIndex next_indentation() const {
-         return pos.line + 1 < frag.size() ? frag[pos.line + 1].indent : 0;
+
+      bool line_continuation() const {
+         return pos.column == line_length() - 1 and frag(pos).back() == '_';
       }
 
-      LineNumber line_number() const {
-         return pos.line < frag.size()
-            ? frag(pos).number
-            : frag.back().number + 1;
-      }
-
-      ColumnIndex column_number() const {
-         return pos.line < frag.size() ? pos.column : 0;
-      }
-
-      using Locus = typename Tok::Location;
-      Locus current_locus() {
-         return { line_number(), column_number() };
-      }
+      Tok finish(Tok&, Language);
    };
 
    bool separator_or_punctuator(uint8_t);
@@ -204,6 +141,13 @@ namespace OpenAxiom {
    inline void comment_token(T& t, TokenValue v) {
       t.category = TokenCategory::Comment;
       t.value = v;
+   }
+
+   template<typename T>
+   inline T& formatting_token(T& t, TokenValue v) {
+      t.category = TokenCategory::Formatting;
+      t.value = v;
+      return t;
    }
 
    template<typename T>
@@ -218,8 +162,23 @@ namespace OpenAxiom {
       t.value = v;
    }
 
+   template<typename T>
+   inline T& eos_token(T& t) {
+      t.category = TokenCategory::EOS;
+      t.value = TokenValue::EndOfStream;
+      t.end = t.start;
+      return t;
+   }
+
+   template<typename T>
+   inline T& ws_token(T& t, FragmentCursor pos) {
+      t.category = TokenCategory::Whitespace;
+      t.end = pos;
+      return t;
+   }
+
    template<typename L, typename T>
-   static void junk(L& line, ColumnIndex& idx, T& t) {
+   void junk(L& line, ColumnIndex& idx, T& t) {
       while (idx < line.size() and not separator_or_punctuator(line[idx]))
          ++idx;
       t.category = TokenCategory::Junk;
@@ -232,8 +191,8 @@ namespace OpenAxiom {
          ++idx;
    }
 
-   template<typename Frag, typename Tok>
-   void string_literal(Frag& frag, FragmentCursor& pos, Tok& t) {
+   template<typename Tok>
+   void string_literal(Fragment& frag, FragmentCursor& pos, Tok& t) {
       bool done = false;
       bool escape = false;
       while (frag.covering(pos) && not done) {
@@ -263,6 +222,15 @@ namespace OpenAxiom {
          ++idx;
    }
    
+   static bool next_line(Fragment& frag, FragmentCursor& pos) {
+      if (++pos.line < frag.size()) {
+         pos.column = frag(pos).indent;
+         return true;
+      }
+      pos.column = 0;
+      return false;
+   }
+
    template<typename L, typename T>
    void integer(L& line, ColumnIndex& idx, T& t) {
       skip_to_end_of_integer(line, idx);
@@ -345,9 +313,8 @@ namespace OpenAxiom {
       return t;
    }
 
-   template<typename Frag, typename Tok>
-   static void
-   left_paren_et_al(Frag& frag, FragmentCursor& pos, Tok& t) {
+   template<typename Tok>
+   void left_paren_et_al(Fragment& frag, FragmentCursor& pos, Tok& t) {
       punctuator_token(t, TokenValue::OpenParen);
       if (frag.covering(pos) and frag[pos] == '|') {
          ++pos;
@@ -355,9 +322,8 @@ namespace OpenAxiom {
       }
    }
 
-   template<typename Frag, typename Tok>
-   static void
-   left_brace_et_al(Frag& frag, FragmentCursor& pos, Tok& t) {
+   template<typename Tok>
+   void left_brace_et_al(Fragment& frag, FragmentCursor& pos, Tok& t) {
       punctuator_token(t, TokenValue::OpenBrace);
       if (frag.covering(pos) and frag[pos] == '|') {
          ++pos;
@@ -365,9 +331,8 @@ namespace OpenAxiom {
       }
    }
 
-   template<typename Frag, typename Tok>
-   static void
-   left_bracket_et_al(Frag& frag, FragmentCursor& pos, Tok& t) {
+   template<typename Tok>
+   void left_bracket_et_al(Fragment& frag, FragmentCursor& pos, Tok& t) {
       punctuator_token(t, TokenValue::OpenBracket);
       if (frag.covering(pos) and frag[pos] == '|') {
          ++pos;
@@ -375,9 +340,8 @@ namespace OpenAxiom {
       }
    }
 
-   template<typename Frag, typename Tok>
-   static void
-   colon_et_al(Frag& frag, FragmentCursor& pos, Tok& t) {
+   template<typename Tok>
+   void colon_et_al(Fragment& frag, FragmentCursor& pos, Tok& t) {
       operator_token(t, TokenValue::Colon);
       if (frag.covering(pos))
          switch (frag[pos]) {
@@ -388,9 +352,8 @@ namespace OpenAxiom {
          }
    }
 
-   template<typename Frag, typename Tok>
-   static void
-   star_et_al(Frag& frag, FragmentCursor& pos, Tok& t) {
+   template<typename Tok>
+   void star_et_al(Fragment& frag, FragmentCursor& pos, Tok& t) {
       operator_token(t, TokenValue::Star);
       if (frag.covering(pos) and frag[pos] == '*') {
          t.value = TokenValue::StarStar;
@@ -398,9 +361,8 @@ namespace OpenAxiom {
       }
    }
 
-   template<typename Frag, typename Tok>
-   static void
-   slash_et_al(Frag& frag, FragmentCursor& pos, Tok& t) {
+   template<typename Tok>
+   void slash_et_al(Fragment& frag, FragmentCursor& pos, Tok& t) {
       operator_token(t, TokenValue::Slash);
       if (frag.covering(pos))
          switch (frag[pos]) {
@@ -410,9 +372,8 @@ namespace OpenAxiom {
          }
    }
 
-   template<typename Frag, typename Tok>
-   static void
-   backslash_et_al(Frag& frag, FragmentCursor& pos, Tok& t) {
+   template<typename Tok>
+   void backslash_et_al(Fragment& frag, FragmentCursor& pos, Tok& t) {
       operator_token(t, TokenValue::Backslash);
       if (frag.covering(pos))
          switch (frag[pos]) {
@@ -422,9 +383,8 @@ namespace OpenAxiom {
          }
    }
 
-   template<typename Frag, typename Tok>
-   static void
-   less_et_al(Frag& frag, FragmentCursor& pos, Tok& t) {
+   template<typename Tok>
+   void less_et_al(Fragment& frag, FragmentCursor& pos, Tok& t) {
       operator_token(t, TokenValue::Less);
       if (frag.covering(pos))
          switch (frag[pos]) {
@@ -441,9 +401,8 @@ namespace OpenAxiom {
          }
    }
 
-   template<typename Frag, typename Tok>
-   static void
-   equal_et_al(Frag& frag, FragmentCursor& pos, Tok& t) {
+   template<typename Tok>
+   void equal_et_al(Fragment& frag, FragmentCursor& pos, Tok& t) {
       operator_token(t, TokenValue::Eq);
       if (frag.covering(pos))
          switch (frag[pos]) {
@@ -459,9 +418,8 @@ namespace OpenAxiom {
          }
    }
 
-   template<typename Frag, typename Tok>
-   static void
-   tilde_et_al(Frag& frag, FragmentCursor& pos, Tok& t) {
+   template<typename Tok>
+   void tilde_et_al(Fragment& frag, FragmentCursor& pos, Tok& t) {
       operator_token(t, TokenValue::Tilde);
       if (frag.covering(pos) and frag[pos] == '=') {
          t.value = TokenValue::TildeEq;
@@ -469,9 +427,8 @@ namespace OpenAxiom {
       }
    }
 
-   template<typename Frag, typename Tok>
-   static void
-   greater_et_al(Frag& frag, FragmentCursor& pos, Tok& t) {
+   template<typename Tok>
+   void greater_et_al(Fragment& frag, FragmentCursor& pos, Tok& t) {
       operator_token(t, TokenValue::Greater);
       if (frag.covering(pos))
          switch (frag[pos]) {
@@ -480,9 +437,8 @@ namespace OpenAxiom {
          }
    }
 
-   template<typename Frag, typename Tok>
-   static void
-   bar_et_al(Frag& frag, FragmentCursor& pos, Tok& t) {
+   template<typename Tok>
+   void bar_et_al(Fragment& frag, FragmentCursor& pos, Tok& t) {
       punctuator_token(t, TokenValue::Bar);
       if (frag.covering(pos))
          switch (frag[pos]) {
@@ -493,30 +449,28 @@ namespace OpenAxiom {
          }
    }
 
-   template<typename Frag, typename Tok>
-   static void
-   minus_et_al(Frag& frag, FragmentCursor& pos, Tok& t) {
+   template<typename Tok>
+   void minus_et_al(Fragment& frag, FragmentCursor& pos, Tok& t) {
       operator_token(t, TokenValue::Minus); 
       if (frag.covering(pos))
          switch (frag[pos]) {
          case '>': t.value = TokenValue::RightArrow; ++pos; break;
          case '-':
             comment_token(t, TokenValue::Wisecrack);
-            pos.column = frag(pos).size();
+            pos.column = frag(pos).length();
             break;
          }
    }
 
 
-   template<typename Frag, typename Tok>
-   static void
-   plus_et_al(Frag& frag, FragmentCursor& pos, Tok& t) {
+   template<typename Tok>
+   void plus_et_al(Fragment& frag, FragmentCursor& pos, Tok& t) {
       operator_token(t, TokenValue::Plus);
       if (frag.covering(pos))
          switch (frag[pos]) {
          case '+':
             comment_token(t, TokenValue::Commentary);
-            pos.column = frag(pos).size();
+            pos.column = frag(pos).length();
             break;
          case '-':
             if (pos.column + 1 < frag(pos).size()
@@ -529,9 +483,8 @@ namespace OpenAxiom {
          }
    }
 
-   template<typename Frag, typename Tok>
-   static void
-   dot_et_al(Frag& frag, FragmentCursor& pos, Tok& t) {
+   template<typename Tok>
+   void dot_et_al(Fragment& frag, FragmentCursor& pos, Tok& t) {
       operator_token(t, TokenValue::Dot);
       if (frag.covering(pos) and frag[pos] == '.') {
          t.value = TokenValue::DotDot;
@@ -539,9 +492,9 @@ namespace OpenAxiom {
       }
    }
 
-   template<typename Frag, typename Tok>
-   static void
-   dollar_et_al(Frag& frag, FragmentCursor& pos, Tok& t, Language dialect) {
+   template<typename Tok>
+   void
+   dollar_et_al(Fragment& frag, FragmentCursor& pos, Tok& t, Language dialect) {
       if (dialect != Language::Boot or not frag.covering(pos)
           or separator_or_punctuator(frag[pos]))
          operator_token(t, TokenValue::Dollar);
@@ -549,9 +502,9 @@ namespace OpenAxiom {
          identifier(frag(pos), pos.column, t, dialect);
    }
 
-   template<typename Frag, typename Tok>
-   static void
-   sharp_et_al(Frag& frag, FragmentCursor& pos, Tok& t, Language dialect) {
+   template<typename Tok>
+   void
+   sharp_et_al(Fragment& frag, FragmentCursor& pos, Tok& t, Language dialect) {
       if (dialect != Language::Lisp)
          operator_token(t, TokenValue::Sharp);
       else if (frag.covering(pos))
@@ -566,52 +519,8 @@ namespace OpenAxiom {
          }
    }
 
-
-   template<typename Frag, typename Tok>
-   Tok Tokenizer<Frag, Tok>::get(Language dialect) {
-      Tok t { };
-      t.start = current_locus();
-      
-      if (eos()) {
-         t.category = TokenCategory::EOS;
-         t.end = current_locus();
-         return t;
-      }
-      else if (isblank(frag[pos])) {
-         skip_whitespace(frag(pos), pos.column);
-         t.category = TokenCategory::Whitespace;
-         t.end = current_locus();
-         return t;
-      }
-      else if (pos.column == line_length() - 1 and frag(pos).back() == '_') {
-         ++pos.line;
-         pos.column = frag(pos).indent;
-      }
-      else if (pos.column == line_length()) {
-         auto indent = indents.top();
-         auto next_indent = next_indentation();
-         t.start = t.end = { next_line_number(), next_indent };
-         if (indent < next_indent) {
-            indents.push(next_indent);
-            ++pos.line;
-            pos.column = next_indent;
-            t.category = TokenCategory::Formatting;
-            t.value = TokenValue::Indent;
-         }
-         else if (indent > next_indent) {
-            indents.pop();
-            t.category = TokenCategory::Formatting;
-            t.value = TokenValue::Unindent;
-         }
-         else {
-            ++pos.line;
-            pos.column = next_indent;
-            t.category = TokenCategory::Formatting;
-            t.value = TokenValue::Justify;
-         }
-         return t;
-      }
-
+   template<typename Tok>
+   Tok Tokenizer<Tok>::finish(Tok& t, Language dialect) {
       switch (auto c = frag.advance(pos)) {
       case '#': sharp_et_al(frag, pos, t, dialect); break;
       case '@': operator_token(t, TokenValue::At); break;
@@ -653,16 +562,51 @@ namespace OpenAxiom {
          break;
       }
 
-      t.end = { frag(pos).number, pos.column };
+      t.end = pos;
       return t;
+   }
+
+   template<typename Tok>
+   Tok Tokenizer<Tok>::get(Language dialect) {
+      Tok t { };
+      t.start = pos;
+      
+      if (eos())
+         return eos_token(t);
+      else if (isblank(frag[pos])) {
+         skip_whitespace(frag(pos), pos.column);
+         return ws_token(t, pos);
+      }
+      else if (line_continuation()) {
+         if (next_line(frag, pos))
+            return finish(t, dialect);
+         return eos_token(t);
+      }
+      else if (pos.column >= line_length()) {
+         if (not next_line(frag, pos))
+            return eos_token(t);
+         t.start = t.end = pos;
+         auto indent = indents.top();
+         if (indent.column < pos.column) {
+            indents.push(pos);
+            return formatting_token(t, TokenValue::Indent);
+         }
+         else if (indent.column > pos.column) {
+            indents.pop();
+            return formatting_token(t, TokenValue::Unindent);
+         }
+
+         return formatting_token(t, TokenValue::Justify);
+      }
+
+      return finish(t, dialect);
    }
 
    // -- Token streams.
    template<typename T>
    struct TokenStream : std::vector<T> {
-      template<typename Frag>
-      explicit TokenStream(Frag& f, Language dialect = Language::Spad) {
-         Tokenizer<Frag, T> lex { f };
+      explicit TokenStream(Fragment& f, Language dialect = Language::Spad) {
+         Tokenizer<T> lex { f };
          while (auto t = lex.get(dialect))
             this->push_back(t);
       }
